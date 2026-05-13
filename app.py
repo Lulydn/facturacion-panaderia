@@ -199,29 +199,24 @@ if uploaded_files:
         col2.metric("📦 CANTIDAD DE ÍTEMS", f"{int(df['Cantidad'].sum())}")
 
         # --- C. TABLA RESUMEN (CORREGIDO) ---
-        # Redondeamos a 2 decimales para que Pandas agrupe bien y no se confunda con variaciones de centésimos
-        df['Precio_Agrupado'] = df['Precio_Unitario_Real'].round(2)
+        # 1. Asignamos la etiqueta antes de agrupar, usando la diferencia de precio que ya calculaste
+        df['Tipo_Precio'] = df.apply(
+            lambda x: "⚠️ MODIFICADO" if (x['Precio_Base_Esperado'] > 0 and abs(x['Diferencia_Precio']) > 5.0) else "✅ BASE",
+            axis=1
+        )
         
-        # Ahora agrupamos incluyendo el Precio_Agrupado. Si hay 2 precios distintos, creará 2 filas.
-        pivot = df.groupby(['PLU', 'Nombre_Final', 'Precio_Agrupado']).agg({
+        # 2. Agrupamos por PLU, Nombre y la ETIQUETA (BASE o MODIFICADO). 
+        # Esto junta todas las variaciones de centavos en la misma bolsa.
+        pivot = df.groupby(['PLU', 'Nombre_Final', 'Tipo_Precio']).agg({
             'Cantidad': 'sum',
             'Total_Factura': 'sum'
         }).reset_index()
         
-        # Función para detectar si la fila es del precio nuevo o viejo
-        def determinar_estado_precio(row):
-            base = PRODUCT_DB.get(row['PLU'], {}).get('precio_base', 0)
-            if base > 0 and abs(row['Precio_Agrupado'] - base) > 5.0:
-                return "⚠️ MODIFICADO"
-            return "✅ BASE"
-
-        pivot['Tipo_Precio'] = pivot.apply(determinar_estado_precio, axis=1)
+        # 3. Calculamos un Precio Unitario Promedio para ese bloque
+        pivot['PRECIO UNIT. ($)'] = pivot['Total_Factura'] / pivot['Cantidad']
 
         # Renombramos columnas para mostrar
-        pivot.rename(columns={
-            'Total_Factura': 'TOTAL ($)', 
-            'Precio_Agrupado': 'PRECIO UNIT. ($)'
-        }, inplace=True)
+        pivot.rename(columns={'Total_Factura': 'TOTAL ($)'}, inplace=True)
 
         # Reordenamos las columnas para que quede prolijo
         pivot = pivot[['PLU', 'Nombre_Final', 'Tipo_Precio', 'PRECIO UNIT. ($)', 'Cantidad', 'TOTAL ($)']]
