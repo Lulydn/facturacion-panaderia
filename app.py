@@ -8,8 +8,6 @@ st.set_page_config(page_title="Facturación Panadería", layout="wide")
 st.title("🥐 Generador de Facturación Semanal")
 
 # --- 1. BASE DE DATOS DE PRODUCTOS Y PRECIOS ---
-# AHORA TIENE 'precio_base': Es el precio final CON IVA al que tú vendes el producto.
-# La app avisará si el cálculo matemático no coincide con este precio.
 PRODUCT_DB = {
     9054: {'nombre': 'C*PAN PORTEÑO KG', 'iva': 0.10, 'precio_base': 250.0},
     9000: {'nombre': 'C*GALLET.CAMPAÑA KG', 'iva': 0.10, 'precio_base': 110.0},
@@ -68,8 +66,6 @@ PRODUCT_DB = {
     9063: {'nombre': 'C*PIONON.KG', 'iva': 0.22, 'precio_base': 240.0},
     9396: {'nombre': 'C*LUNCH P/5 PERSONAS', 'iva': 0.22, 'precio_base': 2900.0},
     9008: {'nombre': 'C*LUNCH P/5 PERSONAS', 'iva': 0.22, 'precio_base': 130.0},
-
- # ... Agrega aquí el resto con sus precios reales ...
 }
 
 # --- FUNCIÓN AUXILIAR PARA LIMPIAR NÚMEROS ---
@@ -140,7 +136,7 @@ if uploaded_files:
     if all_data:
         df = pd.concat(all_data, ignore_index=True)
         
-        # --- 3. AUDITORÍA DE PRODUCTOS DESCONOCIDOS (NUEVO) ---
+        # --- 3. AUDITORÍA DE PRODUCTOS DESCONOCIDOS ---
         plus_en_archivo = df['PLU'].unique()
         plus_desconocidos = [p for p in plus_en_archivo if p not in PRODUCT_DB]
         
@@ -149,13 +145,11 @@ if uploaded_files:
             prod = PRODUCT_DB.get(plu)
             if prod:
                 return prod['iva'], prod['nombre'], prod.get('precio_base', 0)
-            # Si no existe, usamos valores por defecto pero ya lo tenemos identificado en la lista 'plus_desconocidos'
             return 0.22, '⚠️ NO REGISTRADO', 0 
 
         datos_prod = df['PLU'].apply(get_datos_producto)
         
         df['IVA_Porcentaje'] = [x[0] for x in datos_prod]
-        # Si el producto no está registrado, usamos la descripción original del CSV para que sepas cuál es
         df['Nombre_Final'] = [x[1] if x[1] != '⚠️ NO REGISTRADO' else f"⚠️ {row['Descripcion']}" for x, row in zip(datos_prod, df.to_dict('records'))]
         df['Precio_Base_Esperado'] = [x[2] for x in datos_prod]
 
@@ -178,19 +172,14 @@ if uploaded_files:
 
         st.success("✅ Archivos procesados")
 
-        # --- A. ALERTAS (LO PRIMERO QUE VES) ---
-        
-        # 1. Alerta de Productos NO Registrados
+        # --- A. ALERTAS ---
         if plus_desconocidos:
             st.warning(f"🧐 ¡OJO! Hay {len(plus_desconocidos)} códigos en los archivos que NO están en tu base de datos.")
             st.write("El sistema usó IVA 22% por defecto. Deberías agregarlos a tu código 'PRODUCT_DB':")
-            
-            # Mostramos una tablita limpia con los desconocidos
             df_desconocidos = df[df['PLU'].isin(plus_desconocidos)][['PLU', 'Descripcion']].drop_duplicates()
             st.table(df_desconocidos)
             st.divider()
 
-        # 2. Alerta de Diferencia de Precios
         if not errores_precio.empty:
             st.error(f"💸 ¡ATENCIÓN! {len(errores_precio)} ventas tienen diferencia de precio.")
             st.dataframe(
@@ -209,14 +198,33 @@ if uploaded_files:
         col1.metric("💰 TOTAL A FACTURAR", f"$ {total_global:,.2f}")
         col2.metric("📦 CANTIDAD DE ÍTEMS", f"{int(df['Cantidad'].sum())}")
 
-        # --- C. TABLA RESUMEN ---
-        pivot = df.groupby(['PLU', 'Nombre_Final']).agg({
+        # --- C. TABLA RESUMEN (CORREGIDO) ---
+        # Redondeamos a 2 decimales para que Pandas agrupe bien y no se confunda con variaciones de centésimos
+        df['Precio_Agrupado'] = df['Precio_Unitario_Real'].round(2)
+        
+        # Ahora agrupamos incluyendo el Precio_Agrupado. Si hay 2 precios distintos, creará 2 filas.
+        pivot = df.groupby(['PLU', 'Nombre_Final', 'Precio_Agrupado']).agg({
             'Cantidad': 'sum',
-            'Total_Factura': 'sum',
-            'Precio_Unitario_Real': 'mean'
+            'Total_Factura': 'sum'
         }).reset_index()
         
-        pivot.rename(columns={'Total_Factura': 'TOTAL ($)', 'Precio_Unitario_Real': 'PRECIO UNIT. ($)'}, inplace=True)
+        # Función para detectar si la fila es del precio nuevo o viejo
+        def determinar_estado_precio(row):
+            base = PRODUCT_DB.get(row['PLU'], {}).get('precio_base', 0)
+            if base > 0 and abs(row['Precio_Agrupado'] - base) > 5.0:
+                return "⚠️ MODIFICADO"
+            return "✅ BASE"
+
+        pivot['Tipo_Precio'] = pivot.apply(determinar_estado_precio, axis=1)
+
+        # Renombramos columnas para mostrar
+        pivot.rename(columns={
+            'Total_Factura': 'TOTAL ($)', 
+            'Precio_Agrupado': 'PRECIO UNIT. ($)'
+        }, inplace=True)
+
+        # Reordenamos las columnas para que quede prolijo
+        pivot = pivot[['PLU', 'Nombre_Final', 'Tipo_Precio', 'PRECIO UNIT. ($)', 'Cantidad', 'TOTAL ($)']]
 
         st.subheader("📋 Detalle para Factura")
         st.dataframe(
