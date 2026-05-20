@@ -10,7 +10,7 @@ st.title("🥐 Generador de Facturación Semanal")
 # --- 1. BASE DE DATOS DE PRODUCTOS Y PRECIOS ---
 PRODUCT_DB = {
     9054: {'nombre': 'C*PAN PORTEÑO KG', 'iva': 0.10, 'precio_base': 250.0},
-    9000: {'nombre': 'C*GALLET.CAMPAÑA KG', 'iva': 0.10, 'precio_base': 110.0},
+    9000: {'nombre': 'C*GALLET.CAMPAÑA KG', 'iva': 0.10, 'precio_base': 120.0},
     9133: {'nombre': 'C*PAN BAGUETTE TRADICIONAL UN', 'iva': 0.10, 'precio_base': 40.0},
     9049: {'nombre': 'C*PAN FLAUTA KG', 'iva': 0.10, 'precio_base': 60.0},
     8153: {'nombre': 'C*ALFAJO.YOYO UNIDAD', 'iva': 0.22, 'precio_base': 50.0},
@@ -35,18 +35,18 @@ PRODUCT_DB = {
     9442: {'nombre': 'C*PAN INTEGRAL C/PASAS KG', 'iva': 0.22, 'precio_base': 250.0},
     9012: {'nombre': 'C*PAN RALLADO KG', 'iva': 0.22, 'precio_base': 40.0},
     9053: {'nombre': 'C*PAN TORTUGA KG', 'iva': 0.22, 'precio_base': 16.0},
-    9214: {'nombre': 'C*PANCIT.BLANCO S/SAL', 'iva': 0.22, 'precio_base': 120.0},
+    9214: {'nombre': 'C*PANCIT.BLANCO S/SAL', 'iva': 0.22, 'precio_base': 130.0},
     9141: {'nombre': 'C*PASTAF.PORCION', 'iva': 0.22, 'precio_base': 90.0},
     9021: {'nombre': 'C*PIZZA 1/4LATA', 'iva': 0.22, 'precio_base': 250.0},
     9020: {'nombre': 'C*PIZZA 1/2LATA', 'iva': 0.22, 'precio_base': 500.0},
     9046: {'nombre': 'C*PLANTI.KG', 'iva': 0.22, 'precio_base': 120.0},
-    9161: {'nombre': 'C*PREPIZ.CON MUZZARELLA UN', 'iva': 0.22, 'precio_base': 160.0},
-    9162: {'nombre': 'C*PREPIZ.CON GUSTO UN', 'iva': 0.22, 'precio_base': 180.0},
+    9161: {'nombre': 'C*PREPIZ.CON MUZZARELLA UN', 'iva': 0.22, 'precio_base': 170.0},
+    9162: {'nombre': 'C*PREPIZ.CON GUSTO UN', 'iva': 0.22, 'precio_base': 190.0},
     9215: {'nombre': 'C*PREPIZ.CHICA UN', 'iva': 0.22, 'precio_base': 45.0},
     9195: {'nombre': 'C*ROSCA CHICHARRON KG', 'iva': 0.22, 'precio_base': 80.0},
     9057: {'nombre': 'C*ROSCA COMUN DULCE KG', 'iva': 0.22, 'precio_base': 160.0},
     9143: {'nombre': 'C*ROSCAS TODAS UN', 'iva': 0.22, 'precio_base': 70.0},
-    9202: {'nombre': 'C*SANDWI.SURTIDO BANDEJA', 'iva': 0.22, 'precio_base': 190.0},
+    9202: {'nombre': 'C*SANDWI.SURTIDO BANDEJA', 'iva': 0.22, 'precio_base': 200.0},
     9110: {'nombre': 'C*TARTA INDIVIDUAL', 'iva': 0.22, 'precio_base': 90.0},
     9013: {'nombre': 'C*TORTA CUMPLEAÑOS/CASAMIENTO KG', 'iva': 0.22, 'precio_base': 650.0},
     9372: {'nombre': 'C*TORTUG.PARA HAMBURGUESAS 1UN', 'iva': 0.22, 'precio_base': 40.0},
@@ -66,6 +66,7 @@ PRODUCT_DB = {
     9063: {'nombre': 'C*PIONON.KG', 'iva': 0.22, 'precio_base': 240.0},
     9396: {'nombre': 'C*LUNCH P/5 PERSONAS', 'iva': 0.22, 'precio_base': 2900.0},
     9008: {'nombre': 'C*LUNCH P/5 PERSONAS', 'iva': 0.22, 'precio_base': 130.0},
+    9139: {'nombre': 'C*JESUIT.RELLENAS UN', 'iva': 0.22, 'precio_base': 1600.0},
 }
 
 # --- FUNCIÓN AUXILIAR PARA LIMPIAR NÚMEROS ---
