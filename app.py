@@ -7,6 +7,14 @@ from datetime import datetime
 st.set_page_config(page_title="Facturación Panadería", layout="wide")
 st.title("🥐 Generador de Facturación Semanal")
 
+# --- TOLERANCIA CONFIGURABLE PARA DETECTAR CAMBIOS DE PRECIO ---
+tolerancia_pct = st.sidebar.slider(
+    "Tolerancia para detectar cambios de precio (%)",
+    min_value=1, max_value=20, value=5,
+    help="Diferencia mínima (en %) respecto al precio base para marcar un producto como modificado. "
+         "Un valor bajo detecta más cambios; uno alto ignora el ruido de redondeo."
+) / 100
+
 # --- 1. BASE DE DATOS DE PRODUCTOS Y PRECIOS ---
 PRODUCT_DB = {
     9054: {'nombre': 'C*PAN PORTEÑO KG', 'iva': 0.10, 'precio_base': 250.0},
@@ -80,14 +88,14 @@ def limpiar_numero_uy(valor):
 
 # --- 2. CARGA DE ARCHIVOS ---
 uploaded_files = st.file_uploader(
-    "Arrastra los archivos CSV de la semana aquí", 
-    accept_multiple_files=True, 
+    "Arrastra los archivos CSV de la semana aquí",
+    accept_multiple_files=True,
     type=['csv', 'txt']
 )
 
 if uploaded_files:
     all_data = []
-    
+
     for file in uploaded_files:
         try:
             # LIMPIEZA PROFUNDA
@@ -95,12 +103,13 @@ if uploaded_files:
             clean_bytes = raw_bytes.replace(b'\x00', b'')
             content = clean_bytes.decode('latin-1', errors='ignore')
             lines = content.splitlines()
-            
+
             fecha_str = None
             data_rows = []
-            
+
             for line in lines:
                 line = line.strip()
+
                 # A) Buscar Fecha
                 if "Fecha contable" in line:
                     try:
@@ -109,7 +118,7 @@ if uploaded_files:
                         digits = "".join(filter(str.isdigit, raw_date))
                         if len(digits) >= 8: fecha_str = digits[:8]
                     except: pass
-                
+
                 # B) Buscar Filas
                 parts = line.split(';')
                 if len(parts) >= 4 and parts[0].strip().isdigit():
@@ -121,35 +130,35 @@ if uploaded_files:
             # CREAR DATAFRAME
             csv_content = "PLU;Descripcion;Im;Cantidad;UM;Importe;\n" + "\n".join(data_rows)
             df_temp = pd.read_csv(io.StringIO(csv_content), sep=';', dtype=str)
-            
+
             # CORRECCIÓN DE TIPOS
             df_temp['Cantidad'] = df_temp['Cantidad'].apply(limpiar_numero_uy)
             df_temp['Importe'] = df_temp['Importe'].apply(limpiar_numero_uy)
             df_temp['PLU'] = pd.to_numeric(df_temp['PLU'], errors='coerce').fillna(0).astype(int)
-            
+
             fecha_dt = datetime.strptime(fecha_str, "%Y%m%d")
             df_temp['Fecha'] = fecha_dt.strftime("%d/%m/%Y")
+
             all_data.append(df_temp)
-            
+
         except Exception as e:
             st.error(f"❌ Error en {file.name}: {e}")
 
     if all_data:
         df = pd.concat(all_data, ignore_index=True)
-        
+
         # --- 3. AUDITORÍA DE PRODUCTOS DESCONOCIDOS ---
         plus_en_archivo = df['PLU'].unique()
         plus_desconocidos = [p for p in plus_en_archivo if p not in PRODUCT_DB]
-        
+
         # --- 4. CÁLCULOS ---
         def get_datos_producto(plu):
             prod = PRODUCT_DB.get(plu)
             if prod:
                 return prod['iva'], prod['nombre'], prod.get('precio_base', 0)
-            return 0.22, '⚠️ NO REGISTRADO', 0 
+            return 0.22, '⚠️ NO REGISTRADO', 0
 
         datos_prod = df['PLU'].apply(get_datos_producto)
-        
         df['IVA_Porcentaje'] = [x[0] for x in datos_prod]
         df['Nombre_Final'] = [x[1] if x[1] != '⚠️ NO REGISTRADO' else f"⚠️ {row['Descripcion']}" for x, row in zip(datos_prod, df.to_dict('records'))]
         df['Precio_Base_Esperado'] = [x[2] for x in datos_prod]
@@ -158,17 +167,27 @@ if uploaded_files:
         df['Venta_Bruta_Sin_IVA'] = df['Importe'] / 0.90
         df['Monto_IVA'] = df['Venta_Bruta_Sin_IVA'] * df['IVA_Porcentaje']
         df['Total_Factura'] = df['Venta_Bruta_Sin_IVA'] + df['Monto_IVA']
-        
+
         # Precio Unitario Real
         df['Precio_Unitario_Real'] = df.apply(
             lambda x: x['Total_Factura'] / x['Cantidad'] if x['Cantidad'] > 0 else 0, axis=1
         )
 
-        # Auditoría de Precio
+        # --- Auditoría de Precio (TOLERANCIA RELATIVA) ---
+        # Se compara la diferencia como % del precio base, no como monto fijo.
+        # Así el mismo criterio sirve para un producto de $15 y uno de $2900,
+        # y el ruido de redondeo (sobre todo en productos por KG) deja de dar
+        # falsos "bajó el precio".
         df['Diferencia_Precio'] = df['Precio_Unitario_Real'] - df['Precio_Base_Esperado']
+        df['Diferencia_Pct'] = df.apply(
+            lambda x: abs(x['Diferencia_Precio']) / x['Precio_Base_Esperado']
+            if x['Precio_Base_Esperado'] > 0 else 0,
+            axis=1
+        )
+
         errores_precio = df[
-            (df['Precio_Base_Esperado'] > 0) & 
-            (df['Diferencia_Precio'].abs() > 5.0)
+            (df['Precio_Base_Esperado'] > 0) &
+            (df['Diferencia_Pct'] > tolerancia_pct)
         ].copy()
 
         st.success("✅ Archivos procesados")
@@ -182,12 +201,13 @@ if uploaded_files:
             st.divider()
 
         if not errores_precio.empty:
-            st.error(f"💸 ¡ATENCIÓN! {len(errores_precio)} ventas tienen diferencia de precio.")
+            st.error(f"💸 ¡ATENCIÓN! {len(errores_precio)} ventas superan el {int(tolerancia_pct*100)}% de diferencia de precio.")
             st.dataframe(
-                errores_precio[['Fecha', 'Nombre_Final', 'Precio_Base_Esperado', 'Precio_Unitario_Real', 'Diferencia_Precio']].style.format({
+                errores_precio[['Fecha', 'Nombre_Final', 'Precio_Base_Esperado', 'Precio_Unitario_Real', 'Diferencia_Precio', 'Diferencia_Pct']].style.format({
                     'Precio_Base_Esperado': "${:.2f}",
                     'Precio_Unitario_Real': "${:.2f}",
-                    'Diferencia_Precio': "${:.2f}"
+                    'Diferencia_Precio': "${:.2f}",
+                    'Diferencia_Pct': "{:.1%}"
                 }),
                 use_container_width=True
             )
@@ -199,32 +219,29 @@ if uploaded_files:
         col1.metric("💰 TOTAL A FACTURAR", f"$ {total_global:,.2f}")
         col2.metric("📦 CANTIDAD DE ÍTEMS", f"{int(df['Cantidad'].sum())}")
 
-        # --- C. TABLA RESUMEN (CORREGIDO) ---
-        # 1. Asignamos la etiqueta antes de agrupar, usando la diferencia de precio que ya calculaste
+        # --- C. TABLA RESUMEN ---
+        # Etiqueta BASE / MODIFICADO usando la misma tolerancia relativa.
         df['Tipo_Precio'] = df.apply(
-            lambda x: "⚠️ MODIFICADO" if (x['Precio_Base_Esperado'] > 0 and abs(x['Diferencia_Precio']) > 5.0) else "✅ BASE",
+            lambda x: "⚠️ MODIFICADO" if (x['Precio_Base_Esperado'] > 0 and x['Diferencia_Pct'] > tolerancia_pct) else "✅ BASE",
             axis=1
         )
-        
-        # 2. Agrupamos por PLU, Nombre y la ETIQUETA (BASE o MODIFICADO). 
+
+        # Agrupamos por PLU, Nombre y la ETIQUETA (BASE o MODIFICADO).
         # Esto junta todas las variaciones de centavos en la misma bolsa.
         pivot = df.groupby(['PLU', 'Nombre_Final', 'Tipo_Precio']).agg({
             'Cantidad': 'sum',
             'Total_Factura': 'sum'
         }).reset_index()
-        
-        # 3. Calculamos un Precio Unitario Promedio para ese bloque
+
+        # Precio Unitario Promedio para ese bloque
         pivot['PRECIO UNIT. ($)'] = pivot['Total_Factura'] / pivot['Cantidad']
 
-        # Renombramos columnas para mostrar
         pivot.rename(columns={'Total_Factura': 'TOTAL ($)'}, inplace=True)
-
-        # Reordenamos las columnas para que quede prolijo
         pivot = pivot[['PLU', 'Nombre_Final', 'Tipo_Precio', 'PRECIO UNIT. ($)', 'Cantidad', 'TOTAL ($)']]
 
         st.subheader("📋 Detalle para Factura")
         st.dataframe(
-            pivot.style.format({'TOTAL ($)': "${:,.2f}", 'PRECIO UNIT. ($)': "${:,.2f}"}), 
+            pivot.style.format({'TOTAL ($)': "${:,.2f}", 'PRECIO UNIT. ($)': "${:,.2f}"}),
             use_container_width=True
         )
 
@@ -237,7 +254,7 @@ if uploaded_files:
             if not errores_precio.empty:
                 errores_precio.to_excel(writer, sheet_name='ERRORES_PRECIO', index=False)
             df.to_excel(writer, sheet_name='Detalle_Completo', index=False)
-            
+
         st.download_button(
             label="📥 Descargar Excel Completo",
             data=buffer,
