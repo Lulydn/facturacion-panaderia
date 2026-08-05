@@ -1,3 +1,4 @@
 streamlit
 pandas
 xlsxwriter
+starlette<1.4.0
